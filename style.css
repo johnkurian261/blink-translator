@@ -401,6 +401,103 @@ main {
     transform: translateX(-50%) translateY(0);
 }
 
+/* History Log Styles */
+.history-section {
+    display: flex;
+    flex-direction: column;
+}
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.8rem;
+}
+.history-header h3 {
+    margin-bottom: 0;
+}
+.btn.small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+}
+.history-content {
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    padding: 1rem;
+    min-height: 80px;
+    max-height: 150px;
+    overflow-y: auto;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.history-content p {
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+/* Modal Styling */
+.modal {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(15, 23, 42, 0.7);
+    backdrop-filter: blur(8px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    opacity: 1;
+    visibility: visible;
+    transition: all 0.3s ease;
+}
+.modal.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+.modal-content {
+    width: 90%;
+    max-width: 450px;
+    padding: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+.modal-content h2 {
+    font-size: 1.6rem;
+    margin-bottom: 0.5rem;
+}
+.setting-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+.setting-group label {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.slider-box {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: rgba(0,0,0,0.3);
+    padding: 0.8rem 1rem;
+    border-radius: 8px;
+}
+.slider-box input[type="range"] {
+    flex: 1;
+    accent-color: var(--primary);
+}
+.slider-box span {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: bold;
+    color: var(--accent);
+    min-width: 50px;
+    text-align: right;
+}
+
 @media (max-width: 950px) {
     main {
         grid-template-columns: 1fr;

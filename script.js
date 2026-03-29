@@ -13,10 +13,12 @@ let DYNAMIC_EAR_THRESHOLD = 0.20;
 let DYNAMIC_MAR_THRESHOLD = 0.40;
 let DYNAMIC_EYEBROW_THRESHOLD = 50.0; // This will calibrate distance
 
-const DOT_TIME = 0.4;
-const MIN_BLINK_TIME = 0.1;
-const LETTER_PAUSE = 1.3;
-const WORD_PAUSE = 3.0;
+// Dynamic user settings
+let DOT_TIME = 0.4;
+let MIN_BLINK_TIME = 0.1;
+let LETTER_PAUSE = 1.3;
+let WORD_PAUSE = 3.0;
+let MASTER_VOLUME = 0.1;
 
 let EAR_BUFFER = [];
 const BUFFER_SIZE = 5;
@@ -62,12 +64,12 @@ function initAudio() {
     if(audioCtx.state === 'suspended') audioCtx.resume();
 }
 function playBeep(duration, freq, type) {
-    if(!audioCtx) return;
+    if(!audioCtx || MASTER_VOLUME === 0) return;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = type;
     osc.frequency.value = freq;
-    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.setValueAtTime(MASTER_VOLUME, audioCtx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
     osc.connect(gain);
     gain.connect(audioCtx.destination);
@@ -105,6 +107,19 @@ const validVal = document.getElementById('valid-val');
 const accuracyVal = document.getElementById('accuracy-val');
 const morseGrid = document.getElementById('morse-grid');
 const actionLog = document.getElementById('action-log');
+
+// New Modal & History elements
+const settingsBtn = document.getElementById('settings-btn');
+const settingsModal = document.getElementById('settings-modal');
+const closeSettingsBtn = document.getElementById('close-settings-btn');
+const dotSlider = document.getElementById('dot-slider');
+const letterSlider = document.getElementById('letter-slider');
+const volSlider = document.getElementById('vol-slider');
+const dotVal = document.getElementById('dot-val');
+const letterVal = document.getElementById('letter-val');
+const volVal = document.getElementById('vol-val');
+const historyLog = document.getElementById('history-log');
+const exportBtn = document.getElementById('export-btn');
 
 // Log Notifications
 function showLog(msg, beepType) {
@@ -209,6 +224,14 @@ function updateUI() {
     accuracyVal.style.color = accuracy < 50 ? 'var(--danger)' : 'var(--accent)';
 }
 function clearState() {
+    // Before clearing, if there is a real sentence, save to History!
+    if (finalText.trim().length > 0) {
+        const p = document.createElement('p');
+        // Prepend so newest is at the top
+        p.innerText = `[${new Date().toLocaleTimeString('en-US',{hour12:false})}] ${finalText.trim()}`;
+        historyLog.prepend(p);
+    }
+
     currentMorse = "";
     finalText = "";
     predictedWord = "";
@@ -435,6 +458,42 @@ calibrateBtn.addEventListener('click', () => {
 
 cameraBtn.addEventListener('click', toggleCamera);
 clearBtn.addEventListener('click', clearState);
+
+// --- 4. Live Settings Map ---
+settingsBtn.addEventListener('click', () => {
+    settingsModal.classList.remove('hidden');
+});
+closeSettingsBtn.addEventListener('click', () => {
+    settingsModal.classList.add('hidden');
+});
+dotSlider.addEventListener('input', (e) => {
+    DOT_TIME = parseFloat(e.target.value);
+    dotVal.innerText = `${DOT_TIME.toFixed(2)}s`;
+});
+letterSlider.addEventListener('input', (e) => {
+    LETTER_PAUSE = parseFloat(e.target.value);
+    letterVal.innerText = `${LETTER_PAUSE.toFixed(1)}s`;
+});
+volSlider.addEventListener('input', (e) => {
+    MASTER_VOLUME = parseFloat(e.target.value);
+    volVal.innerText = `${Math.round(MASTER_VOLUME / 0.5 * 100)}%`;
+});
+
+// --- 5. Export History File ---
+exportBtn.addEventListener('click', () => {
+    if(!historyLog.innerText.trim()) {
+        showLog("History is empty!", "error");
+        return;
+    }
+    const blob = new Blob([historyLog.innerText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `BlinkTranslatorLog_${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showLog("History Exported!", "action");
+});
 
 updateUI();
 
