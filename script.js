@@ -1,16 +1,25 @@
-// Configuration mirroring the original Python code
+// --- CONFIGURATION ---
 const LEFT_EYE = [33, 160, 158, 133, 153, 144];
 const RIGHT_EYE = [362, 385, 387, 263, 373, 380];
+const MOUTH_TOP = 13;
+const MOUTH_BOTTOM = 14;
+const MOUTH_LEFT = 78;
+const MOUTH_RIGHT = 308;
+const EYEBROW_LEFT = 105;
+const EYEBROW_RIGHT = 334;
+const NOSE_TIP = 1;
 
-const EAR_THRESHOLD = 0.20;
+let DYNAMIC_EAR_THRESHOLD = 0.20; 
+let DYNAMIC_MAR_THRESHOLD = 0.40;
+let DYNAMIC_EYEBROW_THRESHOLD = 50.0; // This will calibrate distance
+
 const DOT_TIME = 0.4;
-const LETTER_PAUSE = 1.5;
+const MIN_BLINK_TIME = 0.1;
+const LETTER_PAUSE = 1.3;
 const WORD_PAUSE = 3.0;
 
-const BUFFER_SIZE = 5;
-const MIN_BLINK_TIME = 0.1;
-
 let EAR_BUFFER = [];
+const BUFFER_SIZE = 5;
 
 // Accuracy tracking
 let total_blinks = 0;
@@ -25,16 +34,60 @@ const MORSE_DICT = {
     "--..": "Z"
 };
 
-const WORD_LIST = ["HELLO","HI","YES","NO","THANK","YOU","HELP","I","AM","GOOD","BAD"];
+const WORD_LIST = [
+    "HELLO","HI","YES","NO","THANK","YOU","HELP","I","AM","GOOD","BAD",
+    "PLEASE","WATER","FOOD","PAIN","MORE","LESS","OKAY","STOP","GO","HAPPY",
+    "SAD","TIRED","COLD","HOT", "GREAT", "WHAT"
+];
 
 // App State
 let isCameraRunning = false;
+let isCalibrating = false;
+let calibrationBuffer = [];
+const CALIBRATION_FRAMES = 50; // Roughly 2-3 seconds at ~20fps
+
 let eyeClosed = false;
 let blinkStart = null;
 let lastBlink = Date.now() / 1000;
+let gestureCooldown = 0;
 
 let currentMorse = "";
 let finalText = "";
+let predictedWord = "";
+
+// Audio & Speech Context
+let audioCtx = null;
+function initAudio() {
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playBeep(duration, freq, type) {
+    if(!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+}
+// Specific Audio Feedback Profiles
+function beepDot() { playBeep(0.15, 800, 'sine'); } // High ping
+function beepDash() { playBeep(0.3, 400, 'square'); } // Deep hold
+function beepAction() { playBeep(0.2, 600, 'triangle'); } // Gesture success
+function beepError() { playBeep(0.4, 200, 'sawtooth'); } // Delete text
+
+// Voice Synthesizer
+function speakText(text) {
+    if(!window.speechSynthesis || !text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+}
 
 // DOM Elements
 const videoEl = document.getElementById('webcam');
@@ -43,6 +96,7 @@ const canvasCtx = canvasEl.getContext('2d');
 const loadingOverlay = document.getElementById('loading-overlay');
 const startOverlay = document.getElementById('start-overlay');
 const cameraBtn = document.getElementById('camera-btn');
+const calibrateBtn = document.getElementById('calibrate-btn');
 const clearBtn = document.getElementById('clear-btn');
 const morseDisplay = document.getElementById('morse-display');
 const textDisplay = document.getElementById('text-display');
@@ -50,64 +104,59 @@ const blinksVal = document.getElementById('blinks-val');
 const validVal = document.getElementById('valid-val');
 const accuracyVal = document.getElementById('accuracy-val');
 const morseGrid = document.getElementById('morse-grid');
+const actionLog = document.getElementById('action-log');
 
-// Helper Functions
-function getDistance(p1, p2) {
-    return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+// Log Notifications
+function showLog(msg, beepType) {
+    actionLog.innerText = msg;
+    actionLog.classList.add('show');
+    if (beepType === 'action') beepAction();
+    if (beepType === 'error') beepError();
+    setTimeout(() => actionLog.classList.remove('show'), 2000);
 }
 
-function eyeAspectRatio(landmarks, eyeIndices) {
-    const eye = eyeIndices.map(i => landmarks[i]);
-    const A = getDistance(eye[1], eye[5]);
-    const B = getDistance(eye[2], eye[4]);
-    const C = getDistance(eye[0], eye[3]);
+// Math Helpers
+function getDistance(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+function computeAspectRatio(landmarks, indices) {
+    const A = getDistance(landmarks[indices[1]], landmarks[indices[5]]);
+    const B = getDistance(landmarks[indices[2]], landmarks[indices[4]]);
+    const C = getDistance(landmarks[indices[0]], landmarks[indices[3]]);
     return (A + B) / (2.0 * C);
 }
+function computeMAR(landmarks) {
+    const H = getDistance(landmarks[MOUTH_TOP], landmarks[MOUTH_BOTTOM]);
+    const W = getDistance(landmarks[MOUTH_LEFT], landmarks[MOUTH_RIGHT]);
+    return W === 0 ? 0 : H / W;
+}
+function computeEyebrow(landmarks) {
+    const L = getDistance(landmarks[EYEBROW_LEFT], landmarks[NOSE_TIP]);
+    const R = getDistance(landmarks[EYEBROW_RIGHT], landmarks[NOSE_TIP]);
+    return (L + R) / 2;
+}
 
+// Autocorrect (Levenshtein)
 function levenshteinDistance(a, b) {
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) {
-        matrix[i] = [i];
-    }
-    for (let j = 0; j <= a.length; j++) {
-        matrix[0][j] = j;
-    }
-
+    const matrix = Array(b.length + 1).fill().map(() => Array(a.length + 1).fill(0));
+    for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
     for (let i = 1; i <= b.length; i++) {
         for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1, // substitution
-                    matrix[i][j - 1] + 1,     // insertion
-                    matrix[i - 1][j] + 1      // deletion
-                );
-            }
+            if (b.charAt(i - 1) === a.charAt(j - 1)) matrix[i][j] = matrix[i - 1][j - 1];
+            else matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
         }
     }
     return matrix[b.length][a.length];
 }
-
-function similarText(str1, str2) {
-    if (str1 === str2) return 1.0;
-    const dist = levenshteinDistance(str1, str2);
-    const maxLen = Math.max(str1.length, str2.length);
-    if (maxLen === 0) return 1.0;
-    
-    // Return a similarity ratio format (1.0 = exact match, 0.0 = no match)
-    return 1 - (dist / maxLen);
-}
-
 function autocorrect(word) {
     if (!word) return word;
     let bestMatch = word;
     let highestScore = 0;
-    
-    // Python cutoff was 0.6
     for (const w of WORD_LIST) {
-        const score = similarText(word, w);
-        if (score > highestScore && score >= 0.6) {
+        if(w === word) return word;
+        const dist = levenshteinDistance(word, w);
+        const maxLen = Math.max(word.length, w.length);
+        const score = 1 - (dist / maxLen);
+        if (score > highestScore && score >= 0.55) {
             highestScore = score;
             bestMatch = w;
         }
@@ -115,29 +164,54 @@ function autocorrect(word) {
     return bestMatch;
 }
 
+// Smart AI Prediction
+function updatePrediction() {
+    if (!finalText && !currentMorse) {
+        predictedWord = "";
+        return;
+    }
+    const words = finalText.trim().split(" ");
+    const currentWord = words[words.length - 1] || "";
+    
+    // Suggest word completion for partially spelled words
+    if (currentWord.length > 0 && !finalText.endsWith(" ")) {
+        const match = WORD_LIST.find(w => w.startsWith(currentWord) && w !== currentWord);
+        predictedWord = match ? match.substring(currentWord.length) : "";
+    } else {
+        predictedWord = "";
+    }
+}
+
+// UI Rendering
 function updateUI() {
-    // Show current morse, fallback to placeholder
+    if (isCalibrating) return; // Freeze UI processing while calibrating
+    
+    // Morse Sequence Rendering
     if (currentMorse) {
         morseDisplay.innerText = currentMorse;
     } else {
         morseDisplay.innerHTML = '<span class="placeholder">Awaiting blink...</span>';
     }
     
-    textDisplay.innerText = finalText;
+    // Smart Text Prediction Rendering
+    updatePrediction();
+    if (predictedWord) {
+        textDisplay.innerHTML = finalText + `<span class="prediction">${predictedWord}</span>`;
+    } else {
+        textDisplay.innerText = finalText;
+    }
+    
+    // Metrics updates
     blinksVal.innerText = total_blinks;
     validVal.innerText = valid_blinks;
-    
     const accuracy = total_blinks ? ((valid_blinks / total_blinks) * 100).toFixed(2) : 100;
     accuracyVal.innerText = `${accuracy}%`;
-    
-    // Style check
-    if (accuracy < 50) accuracyVal.style.color = 'var(--danger)';
-    else accuracyVal.style.color = 'var(--accent)';
+    accuracyVal.style.color = accuracy < 50 ? 'var(--danger)' : 'var(--accent)';
 }
-
 function clearState() {
     currentMorse = "";
     finalText = "";
+    predictedWord = "";
     total_blinks = 0;
     valid_blinks = 0;
     EAR_BUFFER = [];
@@ -147,35 +221,21 @@ function clearState() {
     updateUI();
 }
 
-// Ensure elements exist
-if (!window.FaceMesh) {
-    console.warn("FaceMesh not imported properly.");
-} else {
-    // Setup MediaPipe Face Mesh
-    window.faceMesh = new FaceMesh({locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-    }});
-
-    faceMesh.setOptions({
-        maxNumFaces: 1,
-        refineLandmarks: true,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-    });
-
+// --- FaceMesh Process ---
+if (!window.FaceMesh) console.warn("FaceMesh not imported.");
+else {
+    window.faceMesh = new FaceMesh({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`});
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     faceMesh.onResults(onResults);
 }
 
 function triggerMorseAnimation() {
     morseDisplay.classList.remove('morse-added');
-    // Force a reflow
     void morseDisplay.offsetWidth;
     morseDisplay.classList.add('morse-added');
 }
 
-
 function onResults(results) {
-    // Manage canvas drawing
     canvasEl.width = videoEl.videoWidth;
     canvasEl.height = videoEl.videoHeight;
     canvasCtx.save();
@@ -183,60 +243,102 @@ function onResults(results) {
     
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
-        
         const currentTime = Date.now() / 1000;
         const width = canvasEl.width;
         const height = canvasEl.height;
         
-        // Convert normalized coordinates to pixel coords
         const scaledLandmarks = landmarks.map(lm => ({ x: lm.x * width, y: lm.y * height }));
         
-        // Draw delicate tracking dots over the eyes
-        canvasCtx.fillStyle = "rgba(16, 185, 129, 0.8)"; // Accent green
-        
-        for (const i of LEFT_EYE) {
-            canvasCtx.beginPath();
-            canvasCtx.arc(scaledLandmarks[i].x, scaledLandmarks[i].y, 1.5, 0, 2 * Math.PI);
-            canvasCtx.fill();
-        }
-        for (const i of RIGHT_EYE) {
-            canvasCtx.beginPath();
-            canvasCtx.arc(scaledLandmarks[i].x, scaledLandmarks[i].y, 1.5, 0, 2 * Math.PI);
-            canvasCtx.fill();
-        }
-        
-        const leftEAR = eyeAspectRatio(scaledLandmarks, LEFT_EYE);
-        const rightEAR = eyeAspectRatio(scaledLandmarks, RIGHT_EYE);
+        const leftEAR = computeAspectRatio(scaledLandmarks, LEFT_EYE);
+        const rightEAR = computeAspectRatio(scaledLandmarks, RIGHT_EYE);
         const rawEAR = (leftEAR + rightEAR) / 2;
         
+        const mar = computeMAR(scaledLandmarks);
+        const eyebrow = computeEyebrow(scaledLandmarks);
+        
+        // --- 1. Personal Auto-Calibration Core Logic ---
+        if (isCalibrating) {
+            calibrationBuffer.push({ear: rawEAR, mar: mar, eyebrow: eyebrow});
+            canvasCtx.fillStyle = "rgba(16, 185, 129, 0.4)";
+            canvasCtx.fillRect(0,0,width,height);
+            
+            if (calibrationBuffer.length >= CALIBRATION_FRAMES) {
+                const restingEAR = calibrationBuffer.reduce((a,b)=>a+b.ear,0)/CALIBRATION_FRAMES;
+                const restingMAR = calibrationBuffer.reduce((a,b)=>a+b.mar,0)/CALIBRATION_FRAMES;
+                const restingEyebrow = calibrationBuffer.reduce((a,b)=>a+b.eyebrow,0)/CALIBRATION_FRAMES;
+                
+                DYNAMIC_EAR_THRESHOLD = restingEAR * 0.70; // Set customized eye closure threshold
+                DYNAMIC_MAR_THRESHOLD = restingMAR + 0.15; // Set customized open mouth threshold
+                DYNAMIC_EYEBROW_THRESHOLD = restingEyebrow * 1.10; // Set customized eyebrow raise threshold
+                
+                isCalibrating = false;
+                showLog(`Calibrated! Threshold: ${DYNAMIC_EAR_THRESHOLD.toFixed(2)}`, 'action');
+                updateUI();
+            }
+            canvasCtx.restore();
+            return;
+        }
+
+        // --- Visual Tracking Dots ---
+        canvasCtx.fillStyle = "rgba(16, 185, 129, 0.6)";
+        [...LEFT_EYE, ...RIGHT_EYE, MOUTH_TOP, MOUTH_BOTTOM, EYEBROW_LEFT, EYEBROW_RIGHT].forEach(i => {
+            canvasCtx.beginPath();
+            canvasCtx.arc(scaledLandmarks[i].x, scaledLandmarks[i].y, 2.5, 0, 2 * Math.PI);
+            canvasCtx.fill();
+        });
+
+        // --- 2. Advanced Multi-Gestural Face Controls ---
+        if (currentTime - gestureCooldown > 1.5) {
+            
+            // Gesture A: Mouth Wide Open -> Clear Text
+            if (mar > DYNAMIC_MAR_THRESHOLD) {
+                clearState();
+                showLog("MOUTH OPEN: Txt Cleared", "error");
+                gestureCooldown = currentTime;
+            } 
+            
+            // Gesture B: Eyebrow Raise -> Speak/Enter Space
+            else if (eyebrow > DYNAMIC_EYEBROW_THRESHOLD && finalText.trim().length > 0) {
+                const sentence = finalText.trim();
+                
+                // Only speak if we haven't already finished the sentence with a period
+                if (!finalText.endsWith(". ")) {
+                    showLog("BROWS RAISED: Spoken", "action");
+                    speakText(sentence);
+                    finalText += ". "; 
+                    updateUI();
+                }
+                gestureCooldown = currentTime;
+            }
+        }
+        
+        // --- 3. Robust EAR Blink Processing ---
         EAR_BUFFER.push(rawEAR);
         if (EAR_BUFFER.length > BUFFER_SIZE) EAR_BUFFER.shift();
-        
         const ear = EAR_BUFFER.reduce((a, b) => a + b, 0) / EAR_BUFFER.length;
         
-        // Blink logic
-        if (ear < EAR_THRESHOLD && !eyeClosed) {
+        if (ear < DYNAMIC_EAR_THRESHOLD && !eyeClosed) {
             eyeClosed = true;
             blinkStart = currentTime;
-            
-            // Draw visual feedback (blue tint) when eye is closed
             canvasCtx.fillStyle = "rgba(59, 130, 246, 0.4)";
             canvasCtx.fillRect(0, 0, width, height);
             
-        } else if (ear >= EAR_THRESHOLD && eyeClosed) {
+        } else if (ear >= DYNAMIC_EAR_THRESHOLD && eyeClosed) {
             eyeClosed = false;
             const duration = currentTime - blinkStart;
             lastBlink = currentTime;
             total_blinks++;
             
-            // Draw valid blink feedback on release
             if (duration >= MIN_BLINK_TIME) {
                 valid_blinks++;
-                // Check if dot or dash based on time
+                
+                // Audio Beep Feedback based on dot/dash
                 if (duration < DOT_TIME) {
                     currentMorse += ".";
+                    beepDot();
                 } else {
                     currentMorse += "-";
+                    beepDash();
                 }
                 triggerMorseAnimation();
                 updateUI();
@@ -246,30 +348,34 @@ function onResults(results) {
     canvasCtx.restore();
 }
 
-// Track pauses for translating
+// Core Translator Letter/Word Polling Loop
 setInterval(() => {
-    if (!isCameraRunning) return;
-    
+    if (!isCameraRunning || isCalibrating) return;
     const currentTime = Date.now() / 1000;
     const pause = currentTime - lastBlink;
-    
     let changed = false;
     
-    // Evaluate letter pause
+    // Flush out a completed letter
     if (pause > LETTER_PAUSE && currentMorse) {
         const letter = MORSE_DICT[currentMorse] || "?";
         finalText += letter;
         currentMorse = "";
-        lastBlink = currentTime;
+        lastBlink = currentTime; 
         changed = true;
     }
     
-    // Evaluate word pause
-    if (pause > WORD_PAUSE && finalText && !finalText.endsWith(" ")) {
+    // Flush out a completed word and autocorrect it
+    if (pause > WORD_PAUSE && finalText && !finalText.endsWith(" ") && !finalText.endsWith(". ")) {
         const words = finalText.trim().split(" ");
-        const lastWord = words[words.length - 1];
-        words[words.length - 1] = autocorrect(lastWord);
+        const lastWordRaw = words[words.length - 1];
+        
+        // Run AI autocorrect
+        const corrected = autocorrect(lastWordRaw);
+        words[words.length - 1] = corrected;
         finalText = words.join(" ") + " ";
+        
+        // Voice Synthesizer speaks every completed word
+        speakText(corrected);
         changed = true;
     }
     
@@ -279,77 +385,65 @@ setInterval(() => {
 let camera = null;
 
 async function toggleCamera() {
+    initAudio(); // Initialize browser audio API on click
     if (isCameraRunning) {
-        // Stop Camera
-        if (camera) {
-            camera.stop();
-        }
+        if (camera) camera.stop();
         isCameraRunning = false;
         cameraBtn.innerText = "Start Camera";
         cameraBtn.classList.replace('secondary', 'primary');
+        calibrateBtn.disabled = true;
         startOverlay.style.display = 'flex';
         loadingOverlay.style.display = 'none';
-        
         canvasCtx.clearRect(0, 0, canvasEl.width, canvasEl.height);
     } else {
-        // Start Camera
         startOverlay.style.display = 'none';
         loadingOverlay.style.display = 'flex';
         cameraBtn.disabled = true;
         cameraBtn.innerText = "Starting...";
-        
         if (!camera) {
             camera = new Camera(videoEl, {
                 onFrame: async () => {
                     if (isCameraRunning) {
-                        try {
-                            await faceMesh.send({image: videoEl});
-                        } catch(err) {
-                            console.error(err);
-                        }
+                        try { await faceMesh.send({image: videoEl}); } catch(err) { console.error(err); }
                     }
                 },
-                width: 640,
-                height: 480
+                width: 640, height: 480
             });
         }
-        
         await camera.start();
         isCameraRunning = true;
-        
         loadingOverlay.style.display = 'none';
         cameraBtn.innerText = "Pause Camera";
         cameraBtn.classList.replace('primary', 'secondary');
         cameraBtn.disabled = false;
-        
-        // Optional: clear state on start
-        // clearState(); 
-        // We'll reset lastBlink so we don't translate garbage instantly
+        calibrateBtn.disabled = false;
         lastBlink = Date.now() / 1000;
+        
+        showLog("System Ready. Please Calibrate!", "action");
     }
 }
 
-// Event Listeners
+calibrateBtn.addEventListener('click', () => {
+    isCalibrating = true;
+    calibrationBuffer = [];
+    currentMorse = "";
+    
+    // Flash UI red to signal recording state
+    morseDisplay.innerHTML = '<span class="placeholder" style="color:var(--accent); font-weight:800;">[ CALIBRATING ] Keep face neutral...</span>';
+    beepAction();
+});
+
 cameraBtn.addEventListener('click', toggleCamera);
 clearBtn.addEventListener('click', clearState);
 
-// Initialize
 updateUI();
 
-// Populate Morse Code Dictionary Window
+// Populate Morse Code Grid
 function initMorseDictionary() {
     if (!morseGrid) return;
-    
-    // Sort alphabet A-Z
     const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-    
-    // Create an inverted dictionary to match Letters -> Codes easily
     const invertedDict = {};
-    for (const [code, letter] of Object.entries(MORSE_DICT)) {
-        invertedDict[letter] = code;
-    }
-    
-    // Build the Grid Items
+    for (const [code, letter] of Object.entries(MORSE_DICT)) invertedDict[letter] = code;
     alphabet.forEach(letter => {
         const code = invertedDict[letter];
         if (code) {
