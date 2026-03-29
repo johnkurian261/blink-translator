@@ -10,6 +10,7 @@ const EYEBROW_RIGHT = 334;
 const NOSE_TIP = 1;
 
 let DYNAMIC_EAR_THRESHOLD = 0.20; 
+let DYNAMIC_EAR_WIDE_THRESHOLD = 0.35;
 let DYNAMIC_MAR_THRESHOLD = 0.40;
 let DYNAMIC_EYEBROW_THRESHOLD = 50.0; // This will calibrate distance
 
@@ -290,9 +291,10 @@ function onResults(results) {
                 const restingMAR = calibrationBuffer.reduce((a,b)=>a+b.mar,0)/CALIBRATION_FRAMES;
                 const restingEyebrow = calibrationBuffer.reduce((a,b)=>a+b.eyebrow,0)/CALIBRATION_FRAMES;
                 
-                DYNAMIC_EAR_THRESHOLD = restingEAR * 0.70; // Set customized eye closure threshold
-                DYNAMIC_MAR_THRESHOLD = restingMAR + 0.15; // Set customized open mouth threshold
-                DYNAMIC_EYEBROW_THRESHOLD = restingEyebrow * 1.10; // Set customized eyebrow raise threshold
+                DYNAMIC_EAR_THRESHOLD = restingEAR * 0.70; // custom closure threshold
+                DYNAMIC_EAR_WIDE_THRESHOLD = restingEAR * 1.30; // Eyes wide open
+                DYNAMIC_MAR_THRESHOLD = restingMAR + 0.15; // custom open mouth
+                DYNAMIC_EYEBROW_THRESHOLD = restingEyebrow * 1.10; // custom brow raise
                 
                 isCalibrating = false;
                 showLog(`Calibrated! Threshold: ${DYNAMIC_EAR_THRESHOLD.toFixed(2)}`, 'action');
@@ -339,6 +341,23 @@ function onResults(results) {
         EAR_BUFFER.push(rawEAR);
         if (EAR_BUFFER.length > BUFFER_SIZE) EAR_BUFFER.shift();
         const ear = EAR_BUFFER.reduce((a, b) => a + b, 0) / EAR_BUFFER.length;
+        
+        // Gesture C: Eyes Wide Open -> Accept Predicted Word
+        if (ear > DYNAMIC_EAR_WIDE_THRESHOLD && currentTime - gestureCooldown > 1.5) {
+            if (predictedWord) {
+                finalText += predictedWord + " ";
+                currentMorse = "";
+                
+                // Speak the completed word
+                const words = finalText.trim().split(" ");
+                speakText(words[words.length - 1]);
+                
+                predictedWord = ""; // Flush
+                showLog("EYES WIDE: Autocompleted", "action");
+                updateUI();
+                gestureCooldown = currentTime;
+            }
+        }
         
         if (ear < DYNAMIC_EAR_THRESHOLD && !eyeClosed) {
             eyeClosed = true;
