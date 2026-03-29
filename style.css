@@ -1,0 +1,385 @@
+:root {
+    --bg-dark: #0f172a;
+    --glass-bg: rgba(30, 41, 59, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --accent: #10b981;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --danger: #ef4444;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--bg-dark);
+    /* Subtle glowing gradients in the background */
+    background-image: 
+        radial-gradient(circle at 10% 50%, rgba(59, 130, 246, 0.1) 0%, transparent 60%),
+        radial-gradient(circle at 90% 30%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+    color: var(--text-main);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.app-container {
+    width: 100%;
+    max-width: 1100px;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+}
+
+header {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.2rem;
+    margin-bottom: 0.8rem;
+}
+
+.eye-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--primary);
+    border-radius: 50% 0 50% 0; /* Eye shape */
+    transform: rotate(45deg);
+    position: relative;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+}
+.eye-icon::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    background: #fff;
+    border-radius: 50%;
+}
+
+h1 {
+    font-size: 2.8rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #fff 0%, #93c5fd 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -1px;
+}
+
+.subtitle {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    font-weight: 300;
+}
+
+main {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 2.5rem;
+}
+
+.glass-panel {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: 24px;
+    padding: 1.8rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+}
+
+.video-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 4/3;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #000;
+    box-shadow: inset 0 0 30px rgba(0,0,0,0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#webcam, #output_canvas {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* Mirror camera for natural feel */
+}
+
+#output_canvas {
+    z-index: 10;
+}
+
+.camera-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.8);
+    backdrop-filter: blur(4px);
+    z-index: 20;
+    color: var(--text-main);
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.spinner {
+    width: 48px; height: 48px;
+    border: 4px solid rgba(255,255,255,0.1);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1.5rem;
+}
+
+@keyframes spin { 100% { transform: rotate(360deg); } }
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.8rem;
+}
+
+.btn {
+    flex: 1;
+    padding: 0.9rem 1.5rem;
+    border-radius: 12px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn.primary {
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.39);
+}
+.btn.primary:hover {
+    background: var(--primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.5);
+}
+
+.btn.secondary {
+    background: rgba(255,255,255,0.05);
+    color: white;
+    border: 1px solid rgba(255,255,255,0.1);
+}
+.btn.secondary:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.data-section {
+    gap: 1.5rem;
+}
+
+.stat-card {
+    background: rgba(0,0,0,0.25);
+    border-radius: 16px;
+    padding: 1.5rem;
+    border: 1px solid var(--glass-border);
+}
+
+.stat-card h3 {
+    margin-bottom: 0.8rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+}
+
+.morse-display {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: 0.5rem;
+    color: var(--accent);
+    min-height: 4rem;
+    display: flex;
+    align-items: center;
+}
+
+.morse-display .placeholder {
+    font-size: 1.1rem;
+    color: rgba(148, 163, 184, 0.5); /* Faded text-muted */
+    letter-spacing: normal;
+    font-weight: 400;
+}
+
+.text-display {
+    font-size: 2rem;
+    font-weight: 600;
+    min-height: 3rem;
+    color: #fff;
+    word-break: break-word;
+    display: flex;
+    align-items: center;
+}
+
+.metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.metric-box {
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 1.2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.metric-box .label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.metric-box .value {
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+.metric-box .value.highlight {
+    color: var(--accent);
+}
+
+.instructions {
+    margin-top: auto;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--glass-border);
+}
+
+.instructions h4 {
+    margin-bottom: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.instructions ul {
+    list-style: none;
+    font-size: 0.95rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8rem;
+    color: #cbd5e1;
+}
+
+.instructions li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dot-dash {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: bold;
+    color: var(--primary);
+    font-size: 1.4rem;
+    width: 20px;
+}
+
+/* Animations for blink feedback */
+@keyframes feedbackPulse {
+    0% { transform: scale(1); filter: brightness(1); }
+    50% { transform: scale(1.02); filter: brightness(1.2); }
+    100% { transform: scale(1); filter: brightness(1); }
+}
+
+.morse-added {
+    animation: feedbackPulse 0.3s ease-out;
+}
+
+/* Morse Code Reference Settings */
+.reference-section {
+    margin-top: 0.5rem;
+}
+
+.reference-section h2 {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.morse-grid {
+    display: grid;
+    /* Automatically fits as many columns as possible with min 70px */
+    grid-template-columns: repeat(auto-fill, minmax(75px, 1fr));
+    gap: 1rem;
+}
+
+.morse-item {
+    background: rgba(0,0,0,0.25);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 0.8rem 0.2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.morse-item:hover {
+    transform: translateY(-3px);
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.morse-char {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+.morse-code {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--primary);
+    font-weight: 700;
+    font-size: 1.1rem;
+}
+
+@media (max-width: 950px) {
+    main {
+        grid-template-columns: 1fr;
+    }
+    .app-container {
+        padding: 1rem;
+    }
+    h1 {
+        font-size: 2.2rem;
+    }
+}

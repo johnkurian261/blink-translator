@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blink Morse Translator</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <div class="eye-icon"></div>
+                <h1>Blink Translator</h1>
+            </div>
+            <p class="subtitle">Communicate silently through the blink of an eye</p>
+        </header>
+
+        <main>
+            <div class="video-section glass-panel">
+                <div class="video-wrapper">
+                    <!-- The webcam feed -->
+                    <video id="webcam" autoplay playsinline></video>
+                    <!-- Canvas for drawing overlays (like blink feedback) -->
+                    <canvas id="output_canvas"></canvas>
+                    
+                    <div class="camera-overlay" id="loading-overlay" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Initializing Camera & AI...</p>
+                    </div>
+                    <div class="camera-overlay" id="start-overlay">
+                        <p>Camera is paused. Start to begin.</p>
+                    </div>
+                </div>
+                <div class="controls">
+                    <button id="camera-btn" class="btn primary">Start Camera</button>
+                    <button id="clear-btn" class="btn secondary">Clear Text</button>
+                </div>
+            </div>
+
+            <div class="data-section glass-panel">
+                <div class="stat-card">
+                    <h3>Current Sequence</h3>
+                    <div class="morse-display" id="morse-display">
+                        <span class="placeholder">Awaiting blink...</span>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <h3>Translated Text</h3>
+                    <div class="text-display" id="text-display"></div>
+                </div>
+
+                <div class="metrics">
+                    <div class="metric-box">
+                        <span class="label">Total Blinks</span>
+                        <span class="value" id="blinks-val">0</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="label">Valid Blinks</span>
+                        <span class="value" id="valid-val">0</span>
+                    </div>
+                    <div class="metric-box">
+                        <span class="label">Accuracy</span>
+                        <span class="value highlight" id="accuracy-val">100%</span>
+                    </div>
+                </div>
+                
+                <div class="instructions">
+                    <h4>How it works:</h4>
+                    <ul>
+                        <li><span class="dot-dash">.</span> Short blink (&lt; 0.4s)</li>
+                        <li><span class="dot-dash">-</span> Long blink (&gt; 0.4s)</li>
+                        <li>Pause 1.5s to complete letter</li>
+                        <li>Pause 3.0s to complete word</li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+
+        <!-- New: Morse Code Dictionary Window -->
+        <section class="reference-section glass-panel">
+            <h2>Morse Code Reference Guide</h2>
+            <div class="morse-grid" id="morse-grid">
+                <!-- Dynamically populated by JavaScript -->
+            </div>
+        </section>
+    </div>
+
+    <!-- MediaPipe Libraries from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    
+    <!-- Application Logic -->
+    <script src="script.js"></script>
+</body>
+</html>
