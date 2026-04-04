@@ -16,13 +16,13 @@ let DYNAMIC_EYEBROW_THRESHOLD = 50.0; // This will calibrate distance
 
 // Dynamic user settings
 let DOT_TIME = 0.4;
-let MIN_BLINK_TIME = 0.1;
+let MIN_BLINK_TIME = 0.05;
 let LETTER_PAUSE = 1.3;
 let WORD_PAUSE = 3.0;
 let MASTER_VOLUME = 0.1;
 
 let EAR_BUFFER = [];
-const BUFFER_SIZE = 5;
+const BUFFER_SIZE = 2;
 
 // Accuracy tracking
 let total_blinks = 0;
@@ -291,9 +291,9 @@ function onResults(results) {
                 const restingMAR = calibrationBuffer.reduce((a,b)=>a+b.mar,0)/CALIBRATION_FRAMES;
                 const restingEyebrow = calibrationBuffer.reduce((a,b)=>a+b.eyebrow,0)/CALIBRATION_FRAMES;
                 
-                DYNAMIC_EAR_THRESHOLD = restingEAR * 0.70; // custom closure threshold
+                DYNAMIC_EAR_THRESHOLD = restingEAR * 0.85; // custom closure threshold
                 DYNAMIC_EAR_WIDE_THRESHOLD = restingEAR * 1.30; // Eyes wide open
-                DYNAMIC_MAR_THRESHOLD = restingMAR + 0.15; // custom open mouth
+                DYNAMIC_MAR_THRESHOLD = restingMAR + 0.08; // custom open mouth
                 DYNAMIC_EYEBROW_THRESHOLD = restingEyebrow * 1.10; // custom brow raise
                 
                 isCalibrating = false;
@@ -398,7 +398,7 @@ setInterval(() => {
     let changed = false;
     
     // Flush out a completed letter
-    if (pause > LETTER_PAUSE && currentMorse) {
+    if (!eyeClosed && pause > LETTER_PAUSE && currentMorse) {
         const letter = MORSE_DICT[currentMorse] || "?";
         finalText += letter;
         currentMorse = "";
@@ -407,7 +407,7 @@ setInterval(() => {
     }
     
     // Flush out a completed word and autocorrect it
-    if (pause > WORD_PAUSE && finalText && !finalText.endsWith(" ") && !finalText.endsWith(". ")) {
+    if (!eyeClosed && pause > WORD_PAUSE && finalText && !finalText.endsWith(" ") && !finalText.endsWith(". ")) {
         const words = finalText.trim().split(" ");
         const lastWordRaw = words[words.length - 1];
         

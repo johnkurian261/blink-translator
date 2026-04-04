@@ -25,10 +25,10 @@ DYN_MAR_THRESH = 0.40
 DYN_BROW_THRESH = 50.0
 
 DOT_TIME = 0.4
-MIN_BLINK_TIME = 0.1
+MIN_BLINK_TIME = 0.05
 LETTER_PAUSE = 1.3
 WORD_PAUSE = 3.0
-BUFFER_SIZE = 5
+BUFFER_SIZE = 2
 
 MORSE_DICT = {
     ".-": "A", "-...": "B", "-.-.": "C", "-..": "D", ".": "E",
@@ -57,14 +57,86 @@ def autocorrect(word):
     matches = difflib.get_close_matches(word.upper(), WORD_LIST, n=1, cutoff=0.55)
     return matches[0] if matches else word
 
-def predict_word(current_text):
-    words = current_text.strip().split(" ")
-    last = words[-1].upper() if words else ""
-    if last and not current_text.endswith(" ") and not current_text.endswith(". "):
-        for w in WORD_LIST:
-            if w.startswith(last) and w != last:
-                return w[len(last):]
-    return ""
+class AIPredictor:
+    def __init__(self):
+        self.model_loaded = False
+        self.pipeline = None
+        self.current_context = ""
+        self.latest_prediction = ""
+        self.loading_msg = "Loading AI NLP..."
+        self._lock = threading.Lock()
+        
+        # Load in background so UI frame rate isn't impacted
+        threading.Thread(target=self._load_model, daemon=True).start()
+        
+    def _load_model(self):
+        try:
+            import os
+            os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+            from transformers import pipeline
+            import torch
+            
+            # Using distilgpt2 for very fast next-word context inference on CPU
+            self.pipeline = pipeline("text-generation", model="distilgpt2", pad_token_id=50256)
+            self.model_loaded = True
+            self.loading_msg = ""
+            print("AI NLP Model loaded successfully.")
+        except ImportError:
+            self.loading_msg = "[pip install torch transformers]"
+        except Exception as e:
+            self.loading_msg = f"AI Error"
+            print(f"Error loading AI model: {e}")
+
+    def request_prediction(self, text):
+        if not self.model_loaded or not text:
+            with self._lock:
+                self.latest_prediction = ""
+            return
+            
+        with self._lock:
+            if text == self.current_context:
+                return 
+            self.current_context = text
+            self.latest_prediction = ""
+            
+        threading.Thread(target=self._predict, args=(text,), daemon=True).start()
+        
+    def _predict(self, text):
+        try:
+            # Keep context small for faster CPU inference
+            prompt = text[-60:] 
+            
+            result = self.pipeline(
+                prompt,
+                max_new_tokens=2, 
+                num_return_sequences=1,
+                temperature=0.5,
+                do_sample=True,
+                truncation=True
+            )
+            
+            generated = result[0]['generated_text']
+            new_text = generated[len(prompt):]
+            
+            pred = ""
+            if new_text:
+                words = new_text.replace('\n', ' ').split()
+                if words:
+                    pred = words[0].strip(".,!?\"'()").upper()
+                    
+            with self._lock:
+                if self.current_context == text:
+                    self.latest_prediction = pred
+        except Exception as e:
+            pass
+            
+    def get_prediction(self):
+        if not self.model_loaded:
+            return self.loading_msg
+        with self._lock:
+            return self.latest_prediction
+
+ai_predictor = AIPredictor()
 
 # Audio and Voice
 engine = pyttsx3.init()
@@ -95,6 +167,10 @@ class AdvancedBlinkMorse:
         self.blink_start = None
         self.last_blink = time.time()
         self.gesture_cooldown = 0
+        
+        # Online ML State
+        self.rest_ear = 0.30
+        self.current_blink_min_ear = 1.0
         
         self.current_morse = ""
         self.final_text = ""
@@ -241,13 +317,13 @@ class AdvancedBlinkMorse:
                 
                 if len(self.cal_buffer) >= 50:
                     ears, mars, brows = zip(*self.cal_buffer)
-                    rest_ear = sum(ears)/50
+                    self.rest_ear = sum(ears)/50
                     rest_mar = sum(mars)/50
                     rest_brow = sum(brows)/50
                     
-                    DYN_EAR_THRESH = rest_ear * 0.70
+                    DYN_EAR_THRESH = self.rest_ear * 0.85
                     DYN_EAR_WIDE_THRESH = rest_ear * 1.30
-                    DYN_MAR_THRESH = rest_mar + 0.15
+                    DYN_MAR_THRESH = rest_mar + 0.08
                     DYN_BROW_THRESH = rest_brow * 1.10
                     
                     self.is_calibrating = False
@@ -279,11 +355,11 @@ class AdvancedBlinkMorse:
                 
                 # Autocomplete Wide Eyes Gesture
                 if smooth_ear > DYN_EAR_WIDE_THRESH and current_time - self.gesture_cooldown > 1.5:
-                    if self.predicted:
+                    if self.predicted and self.predicted not in ["Loading AI NLP...", "[pip install torch transformers]", "AI Error"]:
                         self.final_text += self.predicted + " "
                         self.current_morse = ""
                         speak(self.final_text.strip().split()[-1])
-                        self.log("EYES WIDE: Autocompleted Word", "#10b981")
+                        self.log("EYES WIDE: Autocompleted AI Word", "#10b981")
                         self.predicted = ""
                         self.update_ui()
                         self.gesture_cooldown = current_time
@@ -292,39 +368,57 @@ class AdvancedBlinkMorse:
                 if smooth_ear < DYN_EAR_THRESH and not self.eye_closed:
                     self.eye_closed = True
                     self.blink_start = current_time
+                    self.current_blink_min_ear = smooth_ear
                     
                     # Blue tint on closed eyes
                     cv2.rectangle(frame, (0,0), (w,h), (255, 0, 0), 10) 
                     
-                elif smooth_ear >= DYN_EAR_THRESH and self.eye_closed:
-                    self.eye_closed = False
-                    dur = current_time - self.blink_start
-                    self.last_blink = current_time
-                    self.total_blinks += 1
+                elif self.eye_closed:
+                    self.current_blink_min_ear = min(self.current_blink_min_ear, smooth_ear)
                     
-                    if dur >= MIN_BLINK_TIME:
-                        self.valid_blinks += 1
-                        if dur < DOT_TIME:
-                            self.current_morse += "."
-                            beep(800, 150)
-                        else:
-                            self.current_morse += "-"
-                            beep(400, 300)
-                        self.update_ui()
+                    if smooth_ear >= DYN_EAR_THRESH:
+                        self.eye_closed = False
+                        dur = current_time - self.blink_start
+                        self.last_blink = current_time
+                        self.total_blinks += 1
+                        
+                        if dur >= MIN_BLINK_TIME:
+                            # Disabled strict Natural Reflex Classifier because it was rejecting valid faint 'Dots'
+                            is_reflex = False 
+                            
+                            if is_reflex:
+                                pass
+                            else:
+                                self.valid_blinks += 1
+                                if dur < DOT_TIME:
+                                    self.current_morse += "."
+                                    beep(800, 150)
+                                else:
+                                    self.current_morse += "-"
+                                    beep(400, 300)
+                                self.update_ui()
+                
+                # Fatigue Adaptation (Online Learning)
+                # ONLY adapt if the eye is resting normally (not pulled wide open)
+                elif (DYN_EAR_THRESH * 1.1) < smooth_ear < (self.rest_ear * 1.05) and current_time - self.last_blink > 1.0:
+                    # Slower, safer EMA adaptation
+                    self.rest_ear = (self.rest_ear * 0.9995) + (smooth_ear * 0.0005)
+                    DYN_EAR_THRESH = self.rest_ear * 0.85
+                    DYN_EAR_WIDE_THRESH = self.rest_ear * 1.30
                             
         # --- 4. Logic Polling ---
         pause = current_time - self.last_blink
         changed = False
         
         if not self.is_calibrating:
-            if pause > LETTER_PAUSE and self.current_morse:
+            if not self.eye_closed and pause > LETTER_PAUSE and self.current_morse:
                 letter = MORSE_DICT.get(self.current_morse, "?")
                 self.final_text += letter
                 self.current_morse = ""
                 self.last_blink = current_time
                 changed = True
                 
-            if pause > WORD_PAUSE and self.final_text and not self.final_text.endswith(" ") and not self.final_text.endswith(". "):
+            if not self.eye_closed and pause > WORD_PAUSE and self.final_text and not self.final_text.endswith(" ") and not self.final_text.endswith(". "):
                 words = self.final_text.strip().split(" ")
                 corrected = autocorrect(words[-1])
                 words[-1] = corrected
@@ -332,7 +426,8 @@ class AdvancedBlinkMorse:
                 speak(corrected)
                 changed = True
                 
-            new_pred = predict_word(self.final_text)
+            ai_predictor.request_prediction(self.final_text)
+            new_pred = ai_predictor.get_prediction()
             if new_pred != self.predicted:
                 self.predicted = new_pred
                 changed = True
