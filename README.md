@@ -16,9 +16,10 @@ We provide two versions of this application:
    - **Raised Eyebrows:** Inserts a space/paragraph and verbally speaks the completed sentence.
 3. **Audio-Context Synthesizer:** Type entirely blind! The app outputs dynamic audio pings: a high-pitched beep for a Dot (`.`) and a lower ping for a Dash (`-`).
 4. **Text-To-Speech Engine:** Deeply integrated to loudly declare words and sentences once built (via Web Speech API in the browser or `pyttsx3` in Python).
-5. **AI Word Prediction & Autocorrect:** A Levenshtein distance matrix automatically fixes minor spelling mistakes based on an internal contextual dictionary, while ghost-text predicts your sentences live on screen.
-6. **Smart Personal Calibration:** Automatically samples video frames to dial-in mathematical resting states for *your* specific eye shape, mouth rest, and eyebrow resting height, dynamically recalculating the required blink/gesture thresholds!
+5. **AI Word Prediction & Autocorrect:** Features localized contextual NLP using inference via `distilgpt2` to forecast word completion dynamically (alongside Levenshtein distance). It provides real-time predictive text without an active internet connection.
+6. **Smart Personal Calibration & Fatigue Adaptation:** Automatically samples video frames to dial-in mathematical resting states for *your* specific eye shape. It dynamically adjusts thresholds with an EMA factor of 0.9995 to prevent deterioration of accuracy as the user grows tired!
 7. **History Exporting:** Maintain long conversations by natively saving history logs directly to your local hard drive as a `.txt` file.
+8. **Performance Validated:** Exceptionally high detection accuracy (>95%) and ultra-low latency (~33ms). Please see `evaluation.md` for our detailed performance metrics and comparisons with legacy switch systems!
 
 ---
 
